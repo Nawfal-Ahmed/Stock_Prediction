@@ -1,0 +1,459 @@
+{% extends 'base.html' %} {% block content %}
+<div class="container mt-4">
+  <!-- Quick Nav -->
+  <div class="d-flex justify-content-around mb-3 flex-wrap">
+    <a href="{% url 'user_dashboard' %}" class="btn btn-outline-primary m-1"
+      >🏠 Dashboard</a
+    >
+    <a href="{% url 'predict_stock' %}" class="btn btn-outline-success m-1"
+      >📊 New Prediction</a
+    >
+    <a href="{% url 'prediction_history' %}" class="btn btn-outline-info m-1"
+      >📜 History</a
+    >
+  </div>
+
+  <!-- History Card -->
+  <div class="card shadow-lg rounded-3">
+    <div
+      class="card-header bg-gradient text-white fw-bold"
+      style="background: linear-gradient(90deg, #007bff, #6610f2)"
+    >
+      Prediction History
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-primary text-center">
+            <tr>
+              <th>Symbol</th>
+              <th>Date Range</th>
+              <th>Predicted On</th>
+              <th>Trend</th>
+              <th>Confidence</th>
+              <th>Report</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if predictions %} {% for record in predictions %}
+            <tr class="animate__animated animate__fadeIn">
+              <td>{{ record.symbol }}</td>
+              <td>{{ record.start_date }} - {{ record.end_date }}</td>
+              <td>{{ record.predicted_on|date:"d-m-Y H:i" }}</td>
+              <td>
+                {% if record.trend == "UP" %}
+                <span
+                  class="badge bg-success view-chart"
+                  style="cursor: pointer"
+                  data-symbol="{{ record.symbol }}"
+                >
+                  📈 {{ record.trend }}
+                </span>
+                {% elif record.trend == "DOWN" %}
+                <span
+                  class="badge bg-danger view-chart"
+                  style="cursor: pointer"
+                  data-symbol="{{ record.symbol }}"
+                >
+                  📉 {{ record.trend }}
+                </span>
+                {% else %}
+                <span class="badge bg-secondary">{{ record.trend }}</span>
+                {% endif %}
+              </td>
+              <td>
+                <span class="fw-bold">{{ record.confidence_score }}%</span>
+              </td>
+              <td>
+                {% if record.report_file %}
+                <a
+                  href="{{ record.report_file.url }}"
+                  class="btn btn-sm btn-info"
+                  target="_blank"
+                  >View</a
+                >
+                {% else %} - {% endif %}
+              </td>
+            </tr>
+            {% endfor %} {% else %}
+            <tr>
+              <td colspan="6" class="text-center text-muted">
+                No predictions yet.
+              </td>
+            </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pagination -->
+  <div class="d-flex justify-content-center mt-3">
+    <nav aria-label="Page navigation">
+      <ul class="pagination pagination-sm">
+        {% if page_obj.has_previous %}
+        <li class="page-item">
+          <a class="page-link" href="?page={{ page_obj.previous_page_number }}"
+            >Previous</a
+          >
+        </li>
+        {% endif %}
+         {% for num in page_obj.paginator.page_range %} 
+          {% if page_obj.number == num %}
+        <li class="page-item active"><a class="page-link">{{ num }}</a></li>
+          {% else %}
+        <li class="page-item">
+          <a class="page-link" href="?page={{ num }}">{{ num }}</a>
+        </li>
+          {% endif %} 
+          {% endfor %} 
+          {% if page_obj.has_next %}
+        <li class="page-item">
+          <a class="page-link" href="?page={{ page_obj.next_page_number }}"
+            >Next</a
+          >
+        </li>
+        {% endif %}
+      </ul>
+    </nav>
+  </div>
+</div>
+
+<!-- 📊 Stock Modal -->
+<div class="modal fade" id="chartModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content bg-dark text-light">
+      <div class="modal-header">
+        <h5 class="modal-title">Stock Details: <span id="stockName"></span></h5>
+        <button
+          type="button"
+          class="btn-close btn-close-white"
+          data-bs-dismiss="modal"
+        ></button>
+      </div>
+      <div class="modal-body">
+        <!-- HEADER -->
+        <div class="d-flex justify-content-between align-items-start mb-2">
+          <div>
+            <h4 class="mb-1" id="mfName">-</h4>
+            <div id="mfTags" class="d-flex gap-2"></div>
+          </div>
+        </div>
+
+        <!-- RETURNS -->
+        <div class="mb-3">
+          <h2 class="mb-0" id="mfReturn3Y" style="color: #26d07c">—%</h2>
+          <small>
+            <span>3Y annualised</span> &nbsp;|&nbsp;
+            <span id="mfChange1D" class="text-success">—%</span>
+            <span class="text-primary">1D</span>
+          </small>
+        </div>
+
+        <!-- TIME FILTER -->
+        <div class="mb-3 text-center">
+          <button
+            class="btn btn-sm btn-outline-light time-btn"
+            data-period="1d"
+            data-interval="5m"
+          >
+            1D
+          </button>
+          <button
+            class="btn btn-sm btn-outline-light time-btn"
+            data-period="5d"
+            data-interval="15m"
+          >
+            1W
+          </button>
+          <button
+            class="btn btn-sm btn-outline-light time-btn"
+            data-period="1mo"
+            data-interval="1h"
+          >
+            1M
+          </button>
+          <button
+            class="btn btn-sm btn-outline-light time-btn"
+            data-period="6mo"
+            data-interval="1d"
+          >
+            6M
+          </button>
+          <button
+            class="btn btn-sm btn-outline-light time-btn"
+            data-period="1y"
+            data-interval="1d"
+          >
+            1Y
+          </button>
+        </div>
+
+        <!-- CUSTOM DATE -->
+        <div class="row mb-3 text-center">
+          <div class="col">
+            <input
+              type="date"
+              id="startDate"
+              class="form-control form-control-sm"
+            />
+          </div>
+          <div class="col">
+            <input
+              type="date"
+              id="endDate"
+              class="form-control form-control-sm"
+            />
+          </div>
+          <div class="col">
+            <button class="btn btn-sm btn-primary" id="applyDate">Apply</button>
+          </div>
+        </div>
+
+        <!-- CHART -->
+        <div id="candlestickChart" style="height: 500px"></div>
+
+        <!-- INFO GRID -->
+        <div class="row text-center mt-3" id="mfInfoGrid">
+          <div class="col-6 col-md">
+            <div class="text-success">Sector</div>
+            <div id="infSector">-</div>
+          </div>
+          <div class="col-6 col-md">
+            <div class="text-success">Market Cap</div>
+            <div id="infMcap">-</div>
+          </div>
+          <div class="col-6 col-md">
+            <div class="text-success">Price</div>
+            <div id="infPrice">-</div>
+          </div>
+          <div class="col-6 col-md">
+            <div class="text-success">Prev Close</div>
+            <div id="infPrev">-</div>
+          </div>
+          <div class="col-6 col-md">
+            <div class="text-success">Dividend Yield</div>
+            <div id="infDiv">-</div>
+          </div>
+          <div class="col-6 col-md">
+            <div class="text-success">P/E</div>
+            <div id="infPE">-</div>
+          </div>
+        </div>
+
+        <div class="text-success mt-2" style="font-size: 0.85rem">
+          Last updated: <span id="infUpdated">—</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Plotly -->
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+
+<script>
+  /* Utility functions */
+  function formatINR(n) {
+    if (n === null || n === undefined) return "-";
+    const abs = Math.abs(n);
+    if (abs >= 1e12) return "₹" + (n / 1e12).toFixed(2) + " Lc Cr";
+    if (abs >= 1e7) return "₹" + (n / 1e7).toFixed(2) + " Cr";
+    if (abs >= 1e5) return "₹" + (n / 1e5).toFixed(2) + " Lakh";
+    return (
+      "₹" + Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 })
+    );
+  }
+  function formatPct(n) {
+    if (n === null || n === undefined)
+      return { text: "—%", signClass: "text-muted" };
+    const signClass = n >= 0 ? "text-success" : "text-danger";
+    return { text: (n >= 0 ? "+" : "") + n.toFixed(2) + "%", signClass };
+  }
+
+  /* Load stock info */
+  function loadStockInfo(symbol) {
+    fetch(`/api/stock-info/${symbol}/`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.error) return;
+
+        document.getElementById("mfName").textContent = d.name || d.symbol;
+
+        const tagsWrap = document.getElementById("mfTags");
+        tagsWrap.innerHTML = "";
+        (d.tags || []).forEach((t) => {
+          const span = document.createElement("span");
+          span.className = "badge bg-secondary";
+          span.textContent = t;
+          tagsWrap.appendChild(span);
+        });
+
+        const r3 = formatPct(d.return_3y ?? null);
+        const c1 = formatPct(d.change_1d ?? null);
+        const r3El = document.getElementById("mfReturn3Y");
+        r3El.textContent = r3.text;
+        r3El.style.color = (d.return_3y ?? 0) >= 0 ? "#26d07c" : "#ff4d4f";
+
+        const chgEl = document.getElementById("mfChange1D");
+        chgEl.textContent = c1.text;
+        chgEl.classList.remove("text-success", "text-danger", "text-muted");
+        chgEl.classList.add(c1.signClass);
+
+        document.getElementById("infSector").textContent = d.sector || "-";
+        document.getElementById("infMcap").textContent = d.market_cap
+          ? formatINR(d.market_cap)
+          : "-";
+        document.getElementById("infPrice").textContent = d.current_price
+          ? "₹" + d.current_price.toFixed(2)
+          : "-";
+        document.getElementById("infPrev").textContent = d.previous_close
+          ? "₹" + d.previous_close.toFixed(2)
+          : "-";
+        document.getElementById("infDiv").textContent =
+          d.dividend_yield != null ? d.dividend_yield.toFixed(2) + "%" : "-";
+        document.getElementById("infPE").textContent =
+          d.pe_ratio != null ? d.pe_ratio.toFixed(2) : "-";
+        document.getElementById("infUpdated").textContent = d.updated_on || "-";
+      })
+      .catch(() => {});
+  }
+
+  /* Chart */
+  let currentSymbol = "";
+  let currentPeriod = "6mo";
+  let currentInterval = "1d";
+
+  function loadChart(symbol, period = "6mo", interval = "1d") {
+    fetch(`/api/stock-data/${symbol}/?period=${period}&interval=${interval}`)
+      .then((response) => response.json())
+      .then((data) => {
+        if (data.error) {
+          alert(data.error);
+          return;
+        }
+
+        var trace1 = {
+          x: data.dates,
+          open: data.open,
+          high: data.high,
+          low: data.low,
+          close: data.close,
+          type: "candlestick",
+          increasing: { line: { color: "green" } },
+          decreasing: { line: { color: "red" } },
+          name: "Candlestick",
+        };
+
+        var trace2 = {
+          x: data.dates,
+          y: data.trend,
+          type: "scatter",
+          mode: "lines",
+          line: { color: "lime", width: 2 },
+          name: "Trend",
+        };
+
+        var layout = {
+          dragmode: "zoom",
+          margin: { r: 10, t: 25, b: 40, l: 60 },
+          paper_bgcolor: "#111",
+          plot_bgcolor: "#111",
+          font: { color: "#fff" },
+          xaxis: { rangeslider: { visible: false } },
+          yaxis: { title: "Price (₹)" },
+        };
+
+        Plotly.newPlot("candlestickChart", [trace1, trace2], layout);
+      });
+  }
+
+  /* Events */
+  document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll(".view-chart").forEach((btn) => {
+      btn.addEventListener("click", function () {
+        currentSymbol = this.dataset.symbol;
+        document.getElementById("stockName").textContent = currentSymbol;
+
+        loadStockInfo(currentSymbol);
+        loadChart(currentSymbol, currentPeriod, currentInterval);
+
+        new bootstrap.Modal(document.getElementById("chartModal")).show();
+      });
+    });
+
+    document.querySelectorAll(".time-btn").forEach((btn) => {
+      btn.addEventListener("click", function () {
+        currentPeriod = this.dataset.period;
+        currentInterval = this.dataset.interval;
+        loadChart(currentSymbol, currentPeriod, currentInterval);
+      });
+    });
+
+    document.getElementById("applyDate").addEventListener("click", function () {
+      const start = document.getElementById("startDate").value;
+      const end = document.getElementById("endDate").value;
+
+      if (start && end) {
+        fetch(`/api/stock-data/${currentSymbol}/?start=${start}&end=${end}`)
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.error) {
+              alert(data.error);
+              return;
+            }
+
+            var trace1 = {
+              x: data.dates,
+              open: data.open,
+              high: data.high,
+              low: data.low,
+              close: data.close,
+              type: "candlestick",
+              increasing: { line: { color: "green" } },
+              decreasing: { line: { color: "red" } },
+              name: "Candlestick",
+            };
+
+            var trace2 = {
+              x: data.dates,
+              y: data.trend,
+              type: "scatter",
+              mode: "lines",
+              line: { color: "lime", width: 2 },
+              name: "Trend",
+            };
+
+            var layout = {
+              dragmode: "zoom",
+              margin: { r: 10, t: 25, b: 40, l: 60 },
+              paper_bgcolor: "#111",
+              plot_bgcolor: "#111",
+              font: { color: "#fff" },
+              xaxis: { rangeslider: { visible: false } },
+              yaxis: { title: "Price (₹)" },
+            };
+
+            Plotly.newPlot("candlestickChart", [trace1, trace2], layout);
+          });
+      } else {
+        alert("Please select both start and end dates.");
+      }
+    });
+
+    // Auto-refresh every 60 sec
+    setInterval(() => {
+      if (currentSymbol) {
+        loadChart(currentSymbol, currentPeriod, currentInterval);
+        loadStockInfo(currentSymbol);
+      }
+    }, 60000);
+  });
+</script>
+
+<link
+  rel="stylesheet"
+  href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"
+/>
+{% endblock %}

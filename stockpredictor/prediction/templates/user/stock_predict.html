@@ -1,0 +1,59 @@
+{% extends "base.html" %} {% load static %} {% block content %}
+<div class="container my-5">
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <h3 class="text-primary mb-4">Stock Trend Prediction</h3>
+
+      <!-- Django messages (errors/info) -->
+      {% if messages %} {% for m in messages %}
+      <div
+        class="alert {% if m.tags %}alert-{{ m.tags }}{% else %}alert-info{% endif %}"
+        role="alert"
+      >
+        {{ m }}
+      </div>
+      {% endfor %} {% endif %}
+
+      <form method="POST" novalidate>
+        {% csrf_token %}
+        <div class="mb-3">
+          <label class="form-label">Stock Symbol</label>
+          {{ form.symbol }} {% for e in form.symbol.errors %}
+          <div class="text-danger small">{{ e }}</div>
+          {% endfor %}
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Start Date</label>
+          {{ form.start_date }} {% for e in form.start_date.errors %}
+          <div class="text-danger small">{{ e }}</div>
+          {% endfor %}
+        </div>
+        <div class="mb-3">
+          <label class="form-label">End Date</label>
+          {{ form.end_date }} {% for e in form.end_date.errors %}
+          <div class="text-danger small">{{ e }}</div>
+          {% endfor %}
+        </div>
+        <button type="submit" class="btn btn-success">Predict</button>
+      </form>
+
+      {% if result and not result.error %}
+      <div class="card mt-4">
+        <div class="card-body">
+          <h5 class="card-title mb-3">Prediction Result</h5>
+          <p class="mb-1"><strong>Trend:</strong> {{ result.trend }}</p>
+          <p class="mb-1">
+            <strong>Confidence:</strong> {{ result.confidence }}%
+          </p>
+          {% if result.change_pct is not None %}
+          <p class="mb-0">
+            <strong>Period Change:</strong> {{ result.change_pct }}%
+          </p>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

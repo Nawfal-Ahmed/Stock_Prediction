@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% load static %}
+{% block content %}
+
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h3 class="mb-0">📊 Watchlist</h3>
+    <div>
+      <button id="refreshBtn" class="btn btn-outline-secondary btn-sm">Refresh Prices</button>
+      <a href="{% url 'watchlist_export' %}" class="btn btn-outline-primary btn-sm">Export CSV</a>
+    </div>
+  </div>
+
+  <!-- Add form (AJAX) -->
+  <form id="addForm" class="row g-2 mb-3">
+    {% csrf_token %}
+    <div class="col-12 col-md-3"><input name="symbol" class="form-control" placeholder="POWERGRID" required></div>
+    <div class="col-12 col-md-2"><input name="exchange" class="form-control" placeholder="NS"></div>
+    <div class="col-12 col-md-2"><input name="group" class="form-control" placeholder="Group (opt)"></div>
+    <div class="col-12 col-md-3"><input name="notes" class="form-control" placeholder="Note (opt)"></div>
+    <div class="col-6 col-md-1"><input name="target_above" class="form-control" placeholder="↑" type="number" step="0.01"></div>
+    <div class="col-6 col-md-1"><input name="target_below" class="form-control" placeholder="↓" type="number" step="0.01"></div>
+    <div class="col-12"><button class="btn btn-primary">Add</button></div>
+  </form>
+
+  <!-- Bulk import -->
+  <details class="mb-3">
+    <summary class="mb-2">Bulk import</summary>
+    <form id="importForm" class="row g-2">
+      {% csrf_token %}
+      <div class="col-12 col-md-8"><textarea name="symbols" class="form-control" rows="2" placeholder="TCS, INFY, POWERGRID"></textarea></div>
+      <div class="col-12 col-md-2"><input name="exchange" class="form-control" placeholder="NS"></div>
+      <div class="col-12 col-md-2"><button class="btn btn-outline-success w-100">Import</button></div>
+    </form>
+  </details>
+
+  <!-- Items -->
+  <div id="list" class="list-group">
+    {% for it in items %}
+      <div class="list-group-item d-flex flex-wrap justify-content-between align-items-center gap-2" data-id="{{ it.id }}">
+        <div class="d-flex align-items-center gap-2">
+          <button class="btn btn-sm btn-outline-warning pin-btn" title="Pin/Unpin">{{ it.pinned|yesno:"★,☆" }}</button>
+          <div>
+            <div class="fw-bold">{{ it.symbol }}{% if it.exchange %}.{{ it.exchange }}{% endif %}</div>
+            <div class="small text-muted">{{ it.display_name|default:"" }} {% if it.group %}• {{ it.group }}{% endif %}</div>
+            {% if it.notes %}<div class="small">{{ it.notes }}</div>{% endif %}
+          </div>
+        </div>
+
+        <div class="d-flex align-items-center gap-3">
+          <div class="text-end">
+            <div class="fw-semibold price" data-price="{{ it.last_price|default_if_none:'' }}">₹ {{ it.last_price|default:"-" }}</div>
+            <div class="small change {{ it.change_pct|floatformat:2|add:''|yesno:'pos,neg' }}"> {{ it.change_pct|default:"-" }}%</div>
+          </div>
+          <canvas class="spark" width="120" height="40" data-id="{{ it.id }}"></canvas>
+          <div class="btn-group">
+            <button class="btn btn-sm btn-outline-secondary edit-btn" title="Edit">Edit</button>
+            <button class="btn btn-sm btn-outline-danger remove-btn" title="Remove">Remove</button>
+          </div>
+        </div>
+      </div>
+    {% empty %}
+      <div class="alert alert-secondary">No stocks yet. Add one above ✨</div>
+    {% endfor %}
+  </div>
+</div>
+
+<style>
+  .pos { color: #198754; } .neg { color: #dc3545; }
+  .list-group-item { border-radius: 14px; }
+</style>
+
+<!-- Chart.js via CDN for tiny sparklines -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+(function(){
+  // helpers
+  const csrftoken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+  const headers = {'X-CSRFToken': csrftoken};
+
+  function toast(msg){ console.log(msg); } // replace with your toast
+
+  // add item
+  document.getElementById("addForm").addEventListener("submit", async (e)=>{
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const res = await fetch("{% url 'watchlist_add' %}", {method:"POST", headers, body: fd});
+    const data = await res.json();
+    if(!data.ok){ alert(data.message || "Add failed"); return; }
+    location.reload(); // simplest; you can instead inject DOM of the new row
+  });
+
+  // bulk import
+  document.getElementById("importForm").addEventListener("submit", async (e)=>{
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const res = await fetch("{% url 'watchlist_import' %}", {method:"POST", headers, body: fd});
+    const data = await res.json();
+    if(data.ok){ toast("Imported: " + data.added.join(", ")); location.reload(); }
+  });
+
+  // remove + pin + edit
+  document.querySelectorAll(".list-group-item").forEach(row=>{
+    const id = row.dataset.id;
+
+    row.querySelector(".remove-btn").addEventListener("click", async ()=>{
+      if(!confirm("Remove from watchlist?")) return;
+      await fetch(`{% url 'watchlist_remove' 0 %}`.replace("0", id), {method:"POST", headers});
+      row.remove();
+    });
+
+    row.querySelector(".pin-btn").addEventListener("click", async ()=>{
+      const r = await fetch(`{% url 'watchlist_toggle_pin' 0 %}`.replace("0", id), {method:"POST", headers});
+      const d = await r.json();
+      row.querySelector(".pin-btn").innerText = d.pinned ? "★" : "☆";
+    });
+
+    row.querySelector(".edit-btn").addEventListener("click", async ()=>{
+      const notes = prompt("Notes:", "");
+      if(notes === null) return;
+      const fd = new FormData(); fd.append("notes", notes);
+      await fetch(`{% url 'watchlist_update_item' 0 %}`.replace("0", id), {method:"POST", headers, body: fd});
+      location.reload();
+    });
+  });
+
+  // refresh prices
+  document.getElementById("refreshBtn").addEventListener("click", async ()=>{
+    const res = await fetch("{% url 'watchlist_refresh' %}");
+    const data = await res.json();
+    if(!data.ok) return;
+    data.data.forEach(it=>{
+      const row = document.querySelector(`.list-group-item[data-id="${it.id}"]`);
+      if(!row) return;
+      row.querySelector(".price").innerText = "₹ " + (it.price ?? "-");
+      const ch = row.querySelector(".change");
+      ch.innerText = (it.change_pct ?? "-") + "%";
+      ch.classList.toggle("pos", it.change_pct >= 0);
+      ch.classList.toggle("neg", it.change_pct < 0);
+    });
+  });
+
+  // sparklines
+  async function loadSpark(canvas){
+    const id = canvas.dataset.id;
+    const res = await fetch(`{% url 'watchlist_spark' 0 %}`.replace("0", id));
+    const data = await res.json();
+    if(!data.ok || !data.series.length) return;
+    const labels = data.series.map(x=>x[0]);
+    const vals = data.series.map(x=>x[1]);
+    new Chart(canvas.getContext('2d'), {
+      type: 'line',
+      data: { labels, datasets: [{ data: vals, fill: false, borderWidth: 1, pointRadius: 0, tension: 0.3 }]},
+      options: {
+        plugins: { legend: { display:false } },
+        scales: { x: { display:false }, y: { display:false } },
+        elements: { line: { borderColor: undefined } } // no explicit color per your style
+      }
+    });
+  }
+  document.querySelectorAll("canvas.spark").forEach(loadSpark);
+
+  // auto refresh every 60s
+  setInterval(()=> document.getElementById("refreshBtn").click(), 60000);
+})();
+</script>
+{% endblock %}
