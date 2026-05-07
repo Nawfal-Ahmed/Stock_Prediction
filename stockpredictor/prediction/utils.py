@@ -2,15 +2,13 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 from sklearn.preprocessing import MinMaxScaler
-from keras.models import load_model
 import datetime as dt
 import os
-from datetime import timedelta,datetime, timezone
+from datetime import timedelta, datetime, timezone
 import math
 from .models import StockInfo
 import joblib
-from tensorflow.keras.models import load_model
-from .gold_lstm import predict_gold_lstm
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -18,30 +16,31 @@ def load_stock_data(symbol, start_date, end_date):
     df = yf.download(symbol, start=start_date, end=end_date)
     df = df.reset_index()
     df = df[['Open', 'High', 'Low', 'Close', 'Volume']]
-    return df   
+    return df
+
 
 def prepare_data(df):
     data = df['Close']
     scaler = MinMaxScaler(feature_range=(0, 1))
     scaled_data = scaler.fit_transform(np.array(data).reshape(-1, 1))
-
     x_input = []
     for i in range(100, len(scaled_data)):
         x_input.append(scaled_data[i - 100:i])
     x_input = np.array(x_input)
     return x_input, scaler
 
-def predict_trend(symbol, start_date, end_date):
-    
-    df = load_stock_data(symbol, start_date, end_date)
 
+def predict_trend(symbol, start_date, end_date):
+    # Import only when needed
+    from tensorflow.keras.models import load_model
+
+    df = load_stock_data(symbol, start_date, end_date)
     if len(df) < 200:
         return {'error': 'Not enough data to predict'}
 
     model_path = os.path.join(BASE_DIR, 'ml_models', 'stock_dl_model.h5')
     model = load_model(model_path)
 
-    # Prepare recent data
     recent_data = df.tail(200).copy()
     x_input, scaler = prepare_data(recent_data)
 
@@ -62,15 +61,17 @@ def predict_trend(symbol, start_date, end_date):
         'symbol': symbol
     }
 
+
 def predict_stock_trend(symbol, start_date, end_date):
     try:
-        # Ensure datetime objects
+        # Import only when needed
+        from tensorflow.keras.models import load_model
+
         if isinstance(start_date, str):
             start_date = pd.to_datetime(start_date)
         if isinstance(end_date, str):
             end_date = pd.to_datetime(end_date)
 
-        # Fetch historical data
         df = yf.download(
             symbol,
             start=start_date - pd.Timedelta(days=250),
@@ -82,22 +83,16 @@ def predict_stock_trend(symbol, start_date, end_date):
             return {'error': 'Invalid stock symbol or no data available'}
 
         data = df[['Close']].values
-
         if len(data) < 100:
             return {'error': f'Not enough data (found {len(data)} days, need ≥100)'}
 
-        # Scale data
         scaler = MinMaxScaler(feature_range=(0, 1))
         scaled_data = scaler.fit_transform(data)
-
-        # Prepare last 100 days for LSTM
         x_input = np.array(scaled_data[-100:]).reshape(1, 100, 1)
 
-        # Load model
         model_path = os.path.join(BASE_DIR, 'ml_models', 'stock_dl_model.h5')
         model = load_model(model_path)
 
-        # Predict
         prediction = model.predict(x_input, verbose=0)
         predicted_price = scaler.inverse_transform([[prediction[0][0]]])[0][0]
 
@@ -118,19 +113,13 @@ def predict_stock_trend(symbol, start_date, end_date):
 
 
 def _full_ticker(symbol: str, exchange: str | None):
-    """Normalize to Yahoo format. Default to NSE (.NS)."""
     s = symbol.strip().upper()
-    if exchange:
-        ex = exchange.strip().upper()
-    else:
-        ex = "NS"
+    ex = exchange.strip().upper() if exchange else "NS"
     suffix = ".NS" if ex in ("NS", "NSE") else (".BO" if ex in ("BSE", "BO") else "")
     return s + suffix
 
+
 def fetch_quote(symbol: str, exchange: str | None = "NS"):
-    """
-    Returns: dict {price, prev_close, change_pct, name, ts}
-    """
     tkr = yf.Ticker(_full_ticker(symbol, exchange))
     info = tkr.history(period="2d", interval="1d")
     if info.empty:
@@ -147,23 +136,18 @@ def fetch_quote(symbol: str, exchange: str | None = "NS"):
         "ts": datetime.now(timezone.utc),
     }
 
+
 def fetch_sparkline(symbol: str, exchange: str | None = "NS", days: int = 30):
-    """
-    Returns list of (iso_date, close) for the last N days for a tiny line chart.
-    """
     tkr = yf.Ticker(_full_ticker(symbol, exchange))
     df = tkr.history(period=f"{days}d", interval="1d")
     if df.empty:
         return []
-    out = [(idx.strftime("%Y-%m-%d"), float(v)) for idx, v in df["Close"].items()]
-    return out
+    return [(idx.strftime("%Y-%m-%d"), float(v)) for idx, v in df["Close"].items()]
 
 
 def fetch_stock_data(symbol="POWERGRID.NS"):
     stock = yf.Ticker(symbol)
     info = stock.info
-
-    # Fallback (in case some fields are missing)
     stock_info, created = StockInfo.objects.update_or_create(
         symbol=symbol,
         defaults={
@@ -178,39 +162,12 @@ def fetch_stock_data(symbol="POWERGRID.NS"):
     )
     return stock_info
 
-# MODEL = load_model('ml_models/goldstock_dl_model.h5')
-# SCALER = joblib.load('ml_models/scaler.pkl')
-
-# TREND_MAP = {
-#     0: "DOWN 📉",
-#     1: "SIDEWAYS ➖",
-#     2: "UP 📈"
-# }
-# def predict_gold_trend(symbol="TATAGOLD.NS"):
-#     data = yf.download(symbol, period="60d", progress=False)
-#     close = data[['Close']].values
-
-#     scaled = SCALER.transform(close)
-
-#     last_30 = scaled[-30:]
-#     X = last_30.reshape(1, 30, 1)
-
-#     probs = MODEL.predict(X)[0]
-#     pred_class = np.argmax(probs)
-
-#     return {
-#         "trend": TREND_MAP[pred_class],
-#         "confidence": round(float(probs[pred_class] * 100), 2),
-#         "probabilities": probs.tolist()
-#     }
-
- 
-# from .stock_lstm import predict_stock_lstm  # your existing stock model
 
 def run_prediction(symbol, start_date, end_date):
+    # Import only when needed
+    from .gold_lstm import predict_gold_lstm
 
     gold_symbols = ["GOLDBEES.NS", "TATAGOLD.NS", "MCXGOLD", "GOLD"]
-
     if any(g in symbol for g in gold_symbols):
         return predict_gold_lstm(symbol, start_date, end_date)
     else:
