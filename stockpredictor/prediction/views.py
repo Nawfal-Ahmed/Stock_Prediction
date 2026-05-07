@@ -1,28 +1,26 @@
-from django.shortcuts import render, redirect,get_object_or_404
-from django.contrib.auth import login
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth import login, authenticate, logout
 from django.contrib.auth.forms import UserCreationForm
-from django.contrib.auth.decorators import login_required 
-from django.contrib.auth import authenticate, login,logout
+from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from .forms import SignupForm, ForgotPasswordForm,WatchlistForm,StockPredictionForm,UserUpdateForm, ProfileUpdateForm
-from .models import StockPrediction,StockInfo
-from django.contrib.auth.models import User
-from .models import StockPrediction, MLModelInfo, PredictionLog,Watchlist
+from .forms import SignupForm, ForgotPasswordForm, WatchlistForm, StockPredictionForm, UserUpdateForm, ProfileUpdateForm
+from .models import StockPrediction, StockInfo, MLModelInfo, PredictionLog, Watchlist
 from prediction.models import Profile
 from django.core.paginator import Paginator
-from .utils import predict_stock_trend  # Your LSTM logic here
-from datetime import datetime
-import yfinance as yf
+from .utils import predict_stock_trend, fetch_stock_data, fetch_quote, fetch_sparkline
 from django.http import JsonResponse, HttpResponse, HttpResponseBadRequest
 from django.utils import timezone
+from django.utils.timezone import now
 import csv
 import math, datetime as dt, json, traceback
-from django.utils.timezone import now
-from .utils import fetch_stock_data
-from .forms import WatchlistForm
-from .models import Watchlist
-from .utils import fetch_quote, fetch_sparkline
-from django.shortcuts import render
+import yfinance as yf
+from django.conf import settings
+
+# Get custom user model
+from django.contrib.auth import get_user_model
+User = get_user_model()
+
+
 def login_view(request):
     if request.method == 'POST':
         username = request.POST['username']
@@ -35,6 +33,7 @@ def login_view(request):
             messages.error(request, "Invalid credentials")
     return render(request, 'auth/login.html')
 
+
 def signup_view(request):
     if request.method == 'POST':
         username = request.POST['username']
@@ -46,15 +45,16 @@ def signup_view(request):
             messages.error(request, "Username already exists")
         else:
             user = User.objects.create_user(username=username, password=password)
-            # ✅ Always create profile manually
             Profile.objects.get_or_create(user=user)
             login(request, user)
             return redirect('user_dashboard')
     return render(request, 'auth/signup.html')
 
+
 def logout_view(request):
     logout(request)
     return redirect('login')
+
 
 def forgot_password_view(request):
     if request.method == 'POST':
@@ -69,11 +69,10 @@ def forgot_password_view(request):
         form = ForgotPasswordForm()
     return render(request, 'auth/password_reset.html', {'form': form})
 
+
 @login_required
 def user_dashboard(request):
-    # Show last 5 predictions on dashboard
     recent = StockPrediction.objects.filter(user=request.user).order_by('-predicted_on')[:5]
-    # user_watchlist = Watchlist.objects.filter(user=request.user)[:3]  # top 3
     preview = Watchlist.objects.filter(user=request.user).order_by("-pinned", "symbol")[:3]
     form = StockPredictionForm()
     return render(request, 'user/user_dashboard.html', {
@@ -81,6 +80,7 @@ def user_dashboard(request):
         'recent_predictions': recent,
         "watchlist_preview": preview,
     })
+
 
 @login_required
 def profile_settings(request):
@@ -96,20 +96,20 @@ def profile_settings(request):
     else:
         uform = UserUpdateForm(instance=request.user)
         pform = ProfileUpdateForm(instance=request.user.profile)
-
     return render(request, "auth/profile_settings.html", {"uform": uform, "pform": pform})
+
 
 @login_required
 def stock_prediction_view(request):
     result = None
-
     if request.method == 'POST':
         form = StockPredictionForm(request.POST)
         if form.is_valid():
             prediction = form.save(commit=False)
             prediction.user = request.user
 
-            # Call ML/DL predictor
+            # Import ML libraries only when needed to save memory
+            from .utils import predict_stock_trend
             result = predict_stock_trend(
                 prediction.symbol,
                 prediction.start_date,
@@ -117,7 +117,6 @@ def stock_prediction_view(request):
             )
             print("DEBUG prediction result:", result)
 
-            # Safe handling
             if isinstance(result, dict) and 'error' in result:
                 messages.error(request, f"Prediction failed: {result['error']}")
                 prediction.trend = 'ERROR'
@@ -132,7 +131,6 @@ def stock_prediction_view(request):
 
             prediction.save()
 
-            # Log which ML model was used
             active_model = MLModelInfo.objects.filter(active=True).first()
             PredictionLog.objects.create(
                 user=request.user,
@@ -149,18 +147,18 @@ def stock_prediction_view(request):
         'result': result
     })
 
+
 @login_required
 def prediction_history(request):
     predictions = StockPrediction.objects.filter(user=request.user).order_by('-predicted_on')
-
-    paginator = Paginator(predictions, 10)  # 10 per page
+    paginator = Paginator(predictions, 10)
     page_number = request.GET.get("page")
     page_obj = paginator.get_page(page_number)
-
     return render(request, 'user/prediction_history.html', {
         'page_obj': page_obj,
-        "predictions":predictions
+        "predictions": predictions
     })
+
 
 def stock_data(request, symbol):
     try:
@@ -168,47 +166,40 @@ def stock_data(request, symbol):
         interval = request.GET.get("interval", "1d")
         start = request.GET.get("start", None)
         end = request.GET.get("end", None)
-        data = yf.download(symbol, period=period, interval=interval, auto_adjust=True)
+
         if start and end:
             data = yf.download(symbol, start=start, end=end, interval=interval, auto_adjust=True)
         elif period:
             data = yf.download(symbol, period=period, interval=interval, auto_adjust=True)
         else:
             data = yf.download(symbol, period="6mo", interval=interval, auto_adjust=True)
+
         if data.empty:
             return JsonResponse({"error": f"No data found for symbol {symbol}"}, status=404)
-        
-        # Columns to include
+
         columns = ['Open', 'High', 'Low', 'Close']
-
-        # Prepare response
         response = {"dates": data.index.strftime("%Y-%m-%d").tolist()}
-
         for col in columns:
             if col in data.columns:
-                # Use .squeeze() to convert single-column DataFrame to Series
                 response[col.lower()] = data[[col]].squeeze().tolist()
             else:
-                # Fallback in case column is missing
                 response[col.lower()] = []
-        # Trend line
         response["trend"] = data["Close"].squeeze().round(2).tolist()
         return JsonResponse(response)
-            
+
     except Exception as e:
-        print("🔥 ERROR in stock_data:", e)
-        traceback.print_exc()   # 👈 see full stacktrace in console
+        print("ERROR in stock_data:", e)
+        traceback.print_exc()
         return JsonResponse({"error": str(e)}, status=500)
 
+
 def _pct(a, b):
-    """percentage change from a -> b (safe)"""
     try:
         if a in (None, 0) or b is None:
             return None
         return round((b - a) * 100.0 / a, 2)
     except Exception:
         return None
-
 
 
 def stock_info_api(request, symbol):
@@ -225,7 +216,6 @@ def stock_info_api(request, symbol):
         pe = info.get("trailing_pe") or info.get("pe_ratio")
         dy = info.get("dividend_yield")
 
-        # fallback to .info
         if not mcap or not pe or dy is None:
             try:
                 ii = t.info
@@ -236,26 +226,22 @@ def stock_info_api(request, symbol):
             except Exception:
                 pass
 
-        # Convert dividend yield fraction → %
         if dy is not None:
             dy = round(dy * 100.0, 2) if dy < 1 else round(dy, 2)
 
-        # 3Y return
         r3y = None
         hist = t.history(period="3y", interval="1d", auto_adjust=True)
         if not hist.empty:
-            first, last = float(hist["Close"].dropna().iloc[0]), float(hist["Close"].dropna().iloc[-1])
+            first = float(hist["Close"].dropna().iloc[0])
+            last = float(hist["Close"].dropna().iloc[-1])
             r3y = _pct(first, last)
 
-        # 1D change
         chg_1d = _pct(prev_close, curr)
 
-        # Meta info
         ii = getattr(t, "info", {}) or {}
         name = ii.get("longName") or sym
         sector = ii.get("sector")
 
-        # Save in DB
         si, _ = StockInfo.objects.get_or_create(symbol=sym)
         si.full_name = name
         si.sector = sector
@@ -278,7 +264,7 @@ def stock_info_api(request, symbol):
             "updated_on": now().strftime("%Y-%m-%d %H:%M"),
             "return_3y": r3y,
             "change_1d": chg_1d,
-            "tags": ["Equity","Largecap"]
+            "tags": ["Equity", "Largecap"]
         })
     except Exception as e:
         print("stock_info ERR:", e)
@@ -286,14 +272,13 @@ def stock_info_api(request, symbol):
         return JsonResponse({"error": str(e)}, status=500)
 
 
-# ---------- Page ----------
 @login_required
 def watchlist_view(request):
     form = WatchlistForm()
     items = Watchlist.objects.filter(user=request.user).order_by("-pinned", "symbol")
     return render(request, "user/watchlist.html", {"form": form, "items": items})
 
-# ---------- CRUD via AJAX ----------
+
 @login_required
 def watchlist_add(request):
     if request.method != "POST":
@@ -302,7 +287,6 @@ def watchlist_add(request):
     if not form.is_valid():
         return JsonResponse({"ok": False, "errors": form.errors}, status=400)
 
-    # prevent duplicates
     exists = Watchlist.objects.filter(
         user=request.user,
         symbol=form.cleaned_data["symbol"].upper(),
@@ -311,10 +295,9 @@ def watchlist_add(request):
     if exists:
         return JsonResponse({"ok": False, "message": "Already in watchlist"}, status=409)
 
-    item: Watchlist = form.save(commit=False)
+    item = form.save(commit=False)
     item.user = request.user
 
-    # initial quote
     q = fetch_quote(item.symbol, item.exchange or "NS")
     if q:
         item.last_price = q["price"]
@@ -336,11 +319,13 @@ def watchlist_add(request):
         "notes": item.notes or "",
     })
 
+
 @login_required
 def watchlist_remove(request, pk):
     item = get_object_or_404(Watchlist, pk=pk, user=request.user)
     item.delete()
     return JsonResponse({"ok": True})
+
 
 @login_required
 def watchlist_toggle_pin(request, pk):
@@ -349,15 +334,12 @@ def watchlist_toggle_pin(request, pk):
     item.save(update_fields=["pinned"])
     return JsonResponse({"ok": True, "pinned": item.pinned})
 
+
 @login_required
 def watchlist_update_item(request, pk):
-    """
-    Edit notes, targets, group (inline modal form).
-    """
     item = get_object_or_404(Watchlist, pk=pk, user=request.user)
     if request.method != "POST":
         return HttpResponseBadRequest("POST required")
-
     for key in ["notes", "group", "target_above", "target_below"]:
         if key in request.POST:
             val = request.POST.get(key)
@@ -367,12 +349,9 @@ def watchlist_update_item(request, pk):
     item.save()
     return JsonResponse({"ok": True})
 
-# ---------- Data refresh ----------
+
 @login_required
 def watchlist_refresh(request):
-    """
-    Refresh quotes for all items, return minimal JSON for front-end to patch UI.
-    """
     items = Watchlist.objects.filter(user=request.user)
     payload = []
     for it in items:
@@ -389,18 +368,16 @@ def watchlist_refresh(request):
         })
     return JsonResponse({"ok": True, "data": payload})
 
+
 @login_required
 def watchlist_spark(request, pk):
     item = get_object_or_404(Watchlist, pk=pk, user=request.user)
     series = fetch_sparkline(item.symbol, item.exchange or "NS")
     return JsonResponse({"ok": True, "series": series})
 
-# ---------- Import / Export ----------
+
 @login_required
 def watchlist_import(request):
-    """
-    POST with 'symbols' text like 'TCS, INFY, POWERGRID' and optional 'exchange'.
-    """
     if request.method != "POST":
         return HttpResponseBadRequest("POST required")
     symbols = request.POST.get("symbols", "")
@@ -412,10 +389,14 @@ def watchlist_import(request):
         obj = Watchlist(user=request.user, symbol=raw.upper(), exchange=exchange)
         q = fetch_quote(obj.symbol, obj.exchange)
         if q:
-            obj.last_price = q["price"]; obj.change_pct = q["change_pct"]; obj.display_name = q["name"]; obj.last_updated = timezone.now()
+            obj.last_price = q["price"]
+            obj.change_pct = q["change_pct"]
+            obj.display_name = q["name"]
+            obj.last_updated = timezone.now()
         obj.save()
         added.append(obj.symbol)
     return JsonResponse({"ok": True, "added": added})
+
 
 @login_required
 def watchlist_export(request):
@@ -429,18 +410,3 @@ def watchlist_export(request):
     for r in rows:
         writer.writerow(r)
     return resp
-
-
-
-
-# def predict_stock(request):
-#     if request.method == "POST":
-#         symbol = request.POST.get("symbol")
-
-#         result = predict_gold_trend(symbol)
-
-#         return render(request, "result.html", {
-#             "symbol": symbol,
-#             "trend": result["trend"],
-#             "confidence": result["confidence"]
-#         })
