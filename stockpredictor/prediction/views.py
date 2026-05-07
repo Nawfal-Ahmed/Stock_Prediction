@@ -36,15 +36,15 @@ def login_view(request):
 
 def signup_view(request):
     if request.method == 'POST':
-        username = request.POST['username']
+        email = request.POST['email']
         password = request.POST['password']
         confirm = request.POST['confirm']
         if password != confirm:
             messages.error(request, "Passwords do not match")
-        elif User.objects.filter(username=username).exists():
-            messages.error(request, "Username already exists")
+        elif User.objects.filter(email=email).exists():
+            messages.error(request, "Email already exists")
         else:
-            user = User.objects.create_user(username=username, password=password)
+            user = User.objects.create_user(email=email, password=password)
             Profile.objects.get_or_create(user=user)
             login(request, user)
             return redirect('user_dashboard')
