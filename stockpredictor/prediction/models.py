@@ -29,7 +29,8 @@ class StockPrediction(models.Model):
     report_file = models.FileField(upload_to='reports/', null=True, blank=True)
 
     def __str__(self):
-        return f"{self.stock.symbol} ({self.trend}) - {self.user.username}"
+        symbol = self.stock.symbol if self.stock else self.symbol
+        return f"{symbol} ({self.trend}) - {self.user.username}"
 
 
 class Watchlist(models.Model):

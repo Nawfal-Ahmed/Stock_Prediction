@@ -124,6 +124,13 @@ def stock_prediction_view(request):
             elif isinstance(result, dict):
                 prediction.trend = result.get('trend', 'UNKNOWN')
                 prediction.confidence_score = float(result.get('confidence', 0.0))
+                resolved_symbol = result.get('symbol', prediction.symbol)
+                prediction.symbol = resolved_symbol
+                try:
+                    stock_info, _ = StockInfo.objects.get_or_create(symbol=resolved_symbol)
+                    prediction.stock = stock_info
+                except Exception as e:
+                    print("Failed to associate StockInfo:", e)
             else:
                 messages.error(request, "Unexpected model output.")
                 prediction.trend = 'UNKNOWN'
@@ -176,12 +183,22 @@ def stock_data(request, symbol):
         start = request.GET.get("start", None)
         end = request.GET.get("end", None)
 
+        sym = symbol.strip().upper()
         if start and end:
-            data = yf.download(symbol, start=start, end=end, interval=interval, auto_adjust=True)
+            data = yf.download(sym, start=start, end=end, interval=interval, auto_adjust=True)
         elif period:
-            data = yf.download(symbol, period=period, interval=interval, auto_adjust=True)
+            data = yf.download(sym, period=period, interval=interval, auto_adjust=True)
         else:
-            data = yf.download(symbol, period="6mo", interval=interval, auto_adjust=True)
+            data = yf.download(sym, period="6mo", interval=interval, auto_adjust=True)
+
+        if data.empty and '.' not in sym:
+            sym = f"{sym}.NS"
+            if start and end:
+                data = yf.download(sym, start=start, end=end, interval=interval, auto_adjust=True)
+            elif period:
+                data = yf.download(sym, period=period, interval=interval, auto_adjust=True)
+            else:
+                data = yf.download(sym, period="6mo", interval=interval, auto_adjust=True)
 
         if data.empty:
             return JsonResponse({"error": f"No data found for symbol {symbol}"}, status=404)
@@ -215,6 +232,11 @@ def stock_info_api(request, symbol):
     sym = symbol.upper().strip()
     try:
         t = yf.Ticker(sym)
+        hist = t.history(period="1d")
+        if hist.empty and '.' not in sym:
+            sym = f"{sym}.NS"
+            t = yf.Ticker(sym)
+            
         info = t.fast_info or {}
 
         prev_close = float(info.get("previous_close") or 0) or None

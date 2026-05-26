@@ -73,13 +73,17 @@
         {% csrf_token %}
         <div class="row g-2">
           <div class="col-md-3">
-            <input type="text" name="symbol" class="form-control" placeholder="Stock Symbol" required>
+            <select name="symbol" class="form-select" required>
+              <option value="" disabled selected>Select Stock/ETF</option>
+              <option value="POWERGRID.NS">POWERGRID.NS (Power Grid Corp)</option>
+              <option value="TATAGOLD.NS">TATAGOLD.NS (Tata Gold ETF)</option>
+            </select>
           </div>
           <div class="col-md-3">
-            <input type="date" name="start" class="form-control" required>
+            <input type="date" name="start_date" class="form-control" required>
           </div>
           <div class="col-md-3">
-            <input type="date" name="end" class="form-control" required>
+            <input type="date" name="end_date" class="form-control" required>
           </div>
           <div class="col-md-3">
             <button type="submit" class="btn btn-primary w-100">Predict</button>
