@@ -64,12 +64,13 @@ def predict_trend(symbol, start_date, end_date):
 
 def predict_stock_trend(symbol, start_date, end_date):
     try:
-        # Import only when needed, support fallback if TensorFlow is missing
-        use_fallback = False
-        try:
-            from tensorflow.keras.models import load_model
-        except (ImportError, ModuleNotFoundError):
-            use_fallback = True
+        # Import only when needed, support fallback if TensorFlow is missing or running on Render (to save memory)
+        use_fallback = 'RENDER' in os.environ
+        if not use_fallback:
+            try:
+                from tensorflow.keras.models import load_model
+            except (ImportError, ModuleNotFoundError):
+                use_fallback = True
 
         if isinstance(start_date, str):
             start_date = pd.to_datetime(start_date)

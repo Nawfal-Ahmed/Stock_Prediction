@@ -38,11 +38,13 @@ def build_lstm(input_shape):
     return model
 
 def predict_gold_lstm(symbol, start_date, end_date):
-    use_fallback = False
-    try:
-        from tensorflow.keras.models import Sequential
-    except (ImportError, ModuleNotFoundError):
-        use_fallback = True
+    import os
+    use_fallback = 'RENDER' in os.environ
+    if not use_fallback:
+        try:
+            from tensorflow.keras.models import Sequential
+        except (ImportError, ModuleNotFoundError):
+            use_fallback = True
 
     df = load_gold_data(symbol, start_date, end_date)
     
