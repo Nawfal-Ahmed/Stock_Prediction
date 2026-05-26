@@ -149,6 +149,15 @@ def stock_prediction_view(request):
 
 
 @login_required
+def delete_prediction(request, pk):
+    prediction = get_object_or_404(StockPrediction, pk=pk, user=request.user)
+    if request.method == 'POST':
+        prediction.delete()
+        messages.success(request, "Prediction deleted successfully!")
+    return redirect('user_dashboard')
+
+
+@login_required
 def prediction_history(request):
     predictions = StockPrediction.objects.filter(user=request.user).order_by('-predicted_on')
     paginator = Paginator(predictions, 10)

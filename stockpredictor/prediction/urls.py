@@ -20,6 +20,7 @@ urlpatterns = [
     # # Main App Features
     path('predict/', views.stock_prediction_view, name='predict_stock'),  
     path('history/', views.prediction_history, name='prediction_history'),
+    path('prediction/<int:pk>/delete/', views.delete_prediction, name='delete_prediction'),
     
     path("watchlist/", views.watchlist_view, name="watchlist"),
 

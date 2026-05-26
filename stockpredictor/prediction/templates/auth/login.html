@@ -86,9 +86,14 @@
             <p class="mt-4 text-center">
               Don’t have an account? <a href="{% url 'signup' %}">Register</a>
             </p>
-            <p class="text-center">
+            <p class="text-center mb-0">
               <a href="{% url 'password_reset' %}">Forgot Password?</a>
             </p>
+            <div class="mt-4 p-3 rounded text-center" style="background: rgba(255, 255, 255, 0.05); border: 1px dashed rgba(255, 255, 255, 0.15);">
+              <small class="text-muted d-block mb-1">Demo / Admin Credentials</small>
+              <code style="color: #00b4d8; font-size: 0.95rem;">Username: admin</code><br>
+              <code style="color: #00b4d8; font-size: 0.95rem;">Password: admin123</code>
+            </div>
           </div>
         </div>
       </div>
