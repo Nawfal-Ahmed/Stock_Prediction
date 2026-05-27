@@ -4,7 +4,8 @@ Stock Predictor is a web application designed to forecast stock and ETF trends. 
 
 ## Deployment Link
 You can access the live web application here:
-https://stock-prediction-q2lt.onrender.com/dashboard/
+[https://stock-prediction-q2lt.onrender.com/dashboard/](https://stock-prediction-q2lt.onrender.com/dashboard/)
+(Cold start may take 30-60s Thanks for your patience!)
 
 ## Project Overview
 The Stock Predictor application allows users to forecast trends for key financial assets, focusing primarily on high-volume Indian stocks and gold exchange-traded funds (ETFs) such as POWERGRID.NS and TATAGOLD.NS.
